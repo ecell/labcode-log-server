@@ -94,9 +94,12 @@ def read_processes(run_id: int):
         if not run:
             raise HTTPException(status_code=404, detail="Run not found")
 
-        # プロセス一覧を取得
+        # プロセス一覧を取得（input/output を除外）
         processes = session.query(Process)\
-            .filter(Process.run_id == run_id)\
+            .filter(
+                Process.run_id == run_id,
+                ~Process.name.in_(['input', 'output'])  # input と output を除外
+            )\
             .all()
 
         # ProcessResponseEnhancedに変換
