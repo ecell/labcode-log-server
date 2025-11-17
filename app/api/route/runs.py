@@ -1,6 +1,6 @@
 from define_db.models import Run, Project, User, Operation, Process
 from define_db.database import SessionLocal
-from api.response_model import RunResponse, OperationResponseWithProcessStorageAddress
+from api.response_model import RunResponse, OperationResponseWithProcessStorageAddress, ProcessResponseEnhanced
 from fastapi import APIRouter
 from fastapi import Form
 from fastapi import HTTPException
@@ -70,6 +70,51 @@ def read_operations(id: int):
             }
             for operation, process_name, process_storage_address in operations
         ]
+
+
+@router.get("/runs/{run_id}/processes", tags=["runs"], response_model=List[ProcessResponseEnhanced])
+def read_processes(run_id: int):
+    """
+    指定されたRunに属するプロセス一覧を取得する
+
+    Args:
+        run_id: Run ID
+
+    Returns:
+        List[ProcessResponseEnhanced]: プロセスリスト
+
+    注意:
+        ProcessモデルにはDBレベルでtype/status/created_at/updated_atフィールドが
+        存在しないため、現時点ではデフォルト値を返します。
+        将来的にはYAMLファイルから動的に読み込む予定。
+    """
+    with SessionLocal() as session:
+        # Run存在チェック
+        run = session.query(Run).filter(Run.id == run_id, Run.deleted_at.is_(None)).first()
+        if not run:
+            raise HTTPException(status_code=404, detail="Run not found")
+
+        # プロセス一覧を取得
+        processes = session.query(Process)\
+            .filter(Process.run_id == run_id)\
+            .all()
+
+        # ProcessResponseEnhancedに変換
+        # 注: type, status, created_at, updated_atはDBに存在しないため、
+        # 一時的にデフォルト値を設定
+        result = []
+        for p in processes:
+            result.append(ProcessResponseEnhanced(
+                id=p.id,
+                run_id=p.run_id,
+                name=p.name,
+                type="unknown",  # TODO: YAMLから取得
+                status="completed",  # TODO: YAMLから取得または推定
+                created_at=datetime.now(),  # TODO: YAMLまたはRunから取得
+                updated_at=datetime.now()   # TODO: YAMLまたはRunから取得
+            ))
+
+        return result
 
 
 @router.put("/runs/{id}", tags=["runs"], response_model=RunResponse)
