@@ -182,10 +182,12 @@ class ProcessResponseEnhanced(BaseModel):
 
     既存のProcessResponseとの違い:
     - type, status, created_at, updated_atフィールドを追加
+    - started_at, finished_atフィールドを追加（Runから取得）
     - ConfigDict(from_attributes=True)を使用（Pydantic v2）
 
     注意: DBのProcessモデルにはtype/status/created_at/updated_atフィールドが
     存在しないため、APIレイヤーで動的に設定する必要がある
+    started_at/finished_atはRunテーブルから取得する
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -196,6 +198,8 @@ class ProcessResponseEnhanced(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
 
 
 class ProcessDetailResponse(ProcessResponseEnhanced):

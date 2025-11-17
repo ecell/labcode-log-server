@@ -87,6 +87,7 @@ def read_processes(run_id: int):
         ProcessモデルにはDBレベルでtype/status/created_at/updated_atフィールドが
         存在しないため、現時点ではデフォルト値を返します。
         将来的にはYAMLファイルから動的に読み込む予定。
+        started_at/finished_atはRunテーブルから取得します。
     """
     with SessionLocal() as session:
         # Run存在チェック
@@ -104,6 +105,7 @@ def read_processes(run_id: int):
         # ProcessResponseEnhancedに変換
         # 注: type, status, created_at, updated_atはDBに存在しないため、
         # 一時的にデフォルト値を設定
+        # started_at/finished_atはRunテーブルから取得
         result = []
         for p in processes:
             result.append(ProcessResponseEnhanced(
@@ -112,8 +114,10 @@ def read_processes(run_id: int):
                 name=p.name,
                 type="unknown",  # TODO: YAMLから取得
                 status="completed",  # TODO: YAMLから取得または推定
-                created_at=datetime.now(),  # TODO: YAMLまたはRunから取得
-                updated_at=datetime.now()   # TODO: YAMLまたはRunから取得
+                created_at=run.added_at if run.added_at else datetime.now(),  # Runから取得
+                updated_at=datetime.now(),   # TODO: YAMLまたはRunから取得
+                started_at=run.started_at,   # Runから取得
+                finished_at=run.finished_at  # Runから取得
             ))
 
         return result
