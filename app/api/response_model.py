@@ -73,6 +73,7 @@ class ProcessResponse(BaseModel):
 
 class OperationResponse(BaseModel):
     id: int
+    process_id: int
     name: str
     parent_id: Optional[int]
     started_at: Optional[datetime]
