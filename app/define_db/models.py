@@ -85,6 +85,10 @@ class Run(Base):
         DateTime(),
         nullable=True,
     )
+    display_visible: Mapped[bool] = mapped_column(
+        default=True,
+        nullable=False,
+    )
 
 
 class Process(Base):

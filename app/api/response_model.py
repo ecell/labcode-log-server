@@ -35,6 +35,7 @@ class RunResponse(BaseModel):
     status: str
     storage_address: str
     deleted_at: datetime | None
+    display_visible: bool
     # project: Optional[ProjectResponse]  # リレーション
     # user: Optional[UserResponse]  # リレーション
 
@@ -54,6 +55,8 @@ class RunResponseWithProjectName(BaseModel):
     finished_at: Optional[datetime]
     status: str
     storage_address: str
+    deleted_at: datetime | None
+    display_visible: bool
     # project: Optional[ProjectResponse]  # リレーション
     # user: Optional[UserResponse]  # リレーション
 

@@ -45,12 +45,23 @@ def read_by_email(email: str):
 
 
 @router.get("/users/{id}/runs", tags=["users"], response_model=List[RunResponseWithProjectName])
-def read_runs(id: int):
+def read_runs(id: int, include_hidden: bool = False):
     with SessionLocal() as session:
         user = session.query(User).filter(User.id == id).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-        runs = session.query(Run).options(selectinload(Run.project)).filter(Run.user_id == id, Run.deleted_at.is_(None)).all()
+
+        # Build query with deleted_at filter
+        query = session.query(Run).options(selectinload(Run.project)).filter(
+            Run.user_id == id,
+            Run.deleted_at.is_(None)
+        )
+
+        # Filter by display_visible unless include_hidden is True
+        if not include_hidden:
+            query = query.filter(Run.display_visible == True)
+
+        runs = query.all()
         for run in runs:
             run.project_name = run.project.name
         # return [run for run, _ in runs]

@@ -179,6 +179,13 @@ def patch(id: int, attribute: str = Form(), new_value: str = Form()):
                 run.finished_at = new_datetime
             case "status":
                 run.status = new_value
+            case "display_visible":
+                if new_value.lower() not in ("true", "false"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="display_visible must be 'true' or 'false'"
+                    )
+                run.display_visible = (new_value.lower() == "true")
             case _:
                 raise HTTPException(status_code=400, detail="Invalid attribute")
         session.commit()
