@@ -185,7 +185,7 @@ def load_port_info_from_db(session, process_id: int) -> Optional[Dict]:
                         connected_from = f"{source_process.name}.{source_port.port_name}"
 
             input_ports.append({
-                'id': port.port_name,
+                'id': str(port.id),
                 'name': port.port_name,
                 'data_type': port.data_type,
                 'connected_from': connected_from
@@ -213,7 +213,7 @@ def load_port_info_from_db(session, process_id: int) -> Optional[Dict]:
                         connected_to = f"{target_process.name}.{target_port.port_name}"
 
             output_ports.append({
-                'id': port.port_name,
+                'id': str(port.id),
                 'name': port.port_name,
                 'data_type': port.data_type,
                 'connected_to': connected_to

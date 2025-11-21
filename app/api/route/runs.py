@@ -1,11 +1,16 @@
 from define_db.models import Run, Project, User, Operation, Process
 from define_db.database import SessionLocal
-from api.response_model import RunResponse, OperationResponseWithProcessStorageAddress, ProcessResponseEnhanced
+from api.response_model import RunResponse, OperationResponseWithProcessStorageAddress, ProcessResponseEnhanced, ProcessDetailResponse
+from api.route.processes import load_port_info_from_db
+from services.port_auto_generator import auto_generate_ports_for_run
 from fastapi import APIRouter
 from fastapi import Form
 from fastapi import HTTPException
 from datetime import datetime
 from typing import List
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -72,22 +77,23 @@ def read_operations(id: int):
         ]
 
 
-@router.get("/runs/{run_id}/processes", tags=["runs"], response_model=List[ProcessResponseEnhanced])
+@router.get("/runs/{run_id}/processes", tags=["runs"], response_model=List[ProcessDetailResponse])
 def read_processes(run_id: int):
     """
-    指定されたRunに属するプロセス一覧を取得する
+    指定されたRunに属するプロセス一覧を取得する（ポート情報含む）
 
     Args:
         run_id: Run ID
 
     Returns:
-        List[ProcessResponseEnhanced]: プロセスリスト
+        List[ProcessDetailResponse]: プロセスリスト（ポート情報含む）
 
     注意:
         ProcessモデルにはDBレベルでtype/status/created_at/updated_atフィールドが
         存在しないため、現時点ではデフォルト値を返します。
         将来的にはYAMLファイルから動的に読み込む予定。
         started_at/finished_atはRunテーブルから取得します。
+        ポート情報はDBから動的に読み込みます。
     """
     with SessionLocal() as session:
         # Run存在チェック
@@ -102,11 +108,14 @@ def read_processes(run_id: int):
             )\
             .all()
 
-        # ProcessResponseEnhancedに変換
+        # ProcessDetailResponseに変換（ポート情報含む）
         # started_at/finished_atはRunテーブルから取得
         result = []
         for p in processes:
-            result.append(ProcessResponseEnhanced(
+            # ポート情報をDBから読み込み
+            port_info = load_port_info_from_db(session, p.id)
+
+            result.append(ProcessDetailResponse(
                 id=p.id,
                 run_id=p.run_id,
                 name=p.name,
@@ -116,7 +125,8 @@ def read_processes(run_id: int):
                 updated_at=datetime.now(),   # TODO: YAMLまたはRunから取得
                 started_at=run.started_at,   # Runから取得
                 finished_at=run.finished_at,  # Runから取得
-                storage_address=p.storage_address  # Processから取得
+                storage_address=p.storage_address,  # Processから取得
+                ports=port_info  # DBから取得したポート情報
             ))
 
         return result
@@ -177,7 +187,16 @@ def patch(id: int, attribute: str = Form(), new_value: str = Form()):
                 new_datetime = datetime.fromisoformat(new_value)
                 run.finished_at = new_datetime
             case "status":
+                old_status = run.status
                 run.status = new_value
+                # ステータスが"completed"に変更された場合、自動的にポート情報を生成
+                if new_value == "completed" and old_status != "completed":
+                    try:
+                        result = auto_generate_ports_for_run(session, run.id)
+                        logger.info(f"Auto-generated ports for Run {run.id}: {result}")
+                    except Exception as e:
+                        logger.error(f"Failed to auto-generate ports for Run {run.id}: {e}")
+                        # ポート生成失敗はエラーとしない（Runの更新は継続）
             case "display_visible":
                 if new_value.lower() not in ("true", "false"):
                     raise HTTPException(
