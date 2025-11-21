@@ -115,7 +115,8 @@ def read_processes(run_id: int):
                 created_at=run.added_at if run.added_at else datetime.now(),  # Runから取得
                 updated_at=datetime.now(),   # TODO: YAMLまたはRunから取得
                 started_at=run.started_at,   # Runから取得
-                finished_at=run.finished_at  # Runから取得
+                finished_at=run.finished_at,  # Runから取得
+                storage_address=p.storage_address  # Processから取得
             ))
 
         return result
