@@ -1,13 +1,75 @@
-from define_db.models import Operation, Process
+from define_db.models import Operation, Process, Run
 from define_db.database import SessionLocal
 from api.response_model import OperationResponse
 from fastapi import APIRouter
 from fastapi import Form
 from fastapi import HTTPException
+from fastapi import Query
 from typing import Optional
 from datetime import datetime
 
 router = APIRouter()
+
+
+@router.get("/operations", tags=["operations"])
+def get_all_operations(
+    user_id: Optional[int] = Query(None, description="Filter by user_id"),
+    run_id: Optional[int] = Query(None, description="Filter by run_id"),
+    process_id: Optional[int] = Query(None, description="Filter by process_id"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+    limit: int = Query(1000, description="Limit number of results", ge=1, le=10000),
+    offset: int = Query(0, description="Offset for pagination", ge=0)
+):
+    """
+    全オペレーション一覧を取得する。
+    Operation → Process → Run のJOINクエリを実行し、run_idを含めたレスポンスを返す。
+
+    Parameters:
+    - user_id: ユーザーIDでフィルタリング(オプション)
+    - run_id: ランIDでフィルタリング(オプション)
+    - process_id: プロセスIDでフィルタリング(オプション)
+    - status: ステータスでフィルタリング(オプション)
+    - limit: 取得件数制限(デフォルト: 1000)
+    - offset: オフセット(デフォルト: 0)
+    """
+    with SessionLocal() as session:
+        # Operation → Process → Run のJOINクエリ
+        query = session.query(
+            Operation,
+            Process.run_id.label('run_id')
+        ).join(
+            Process, Operation.process_id == Process.id
+        ).join(
+            Run, Process.run_id == Run.id
+        )
+
+        # フィルタ適用
+        if user_id is not None:
+            query = query.filter(Run.user_id == user_id)
+        if run_id is not None:
+            query = query.filter(Process.run_id == run_id)
+        if process_id is not None:
+            query = query.filter(Operation.process_id == process_id)
+        if status is not None:
+            query = query.filter(Operation.status == status)
+
+        # 論理削除されたRunを除外
+        query = query.filter(Run.deleted_at.is_(None))
+
+        # ページネーション
+        query = query.limit(limit).offset(offset)
+
+        # 実行
+        results = query.all()
+
+        # レスポンス構築
+        operations = []
+        for operation, run_id in results:
+            op_dict = OperationResponse.model_validate(operation).model_dump()
+            op_dict['run_id'] = run_id
+            operations.append(op_dict)
+
+        return operations
 
 
 @router.post("/operations/", tags=["operations"], response_model=OperationResponse)
