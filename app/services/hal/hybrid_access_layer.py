@@ -120,7 +120,7 @@ class HybridAccessLayer:
 
         return inferred
 
-    def _do_infer_storage_mode(self, run) -> StorageMode:
+    def _do_infer_storage_mode(self, run, persist: bool = True) -> StorageMode:
         """実際の推論処理
 
         推論優先順位（重要）:
@@ -130,6 +130,10 @@ class HybridAccessLayer:
 
         この優先順位は、レガシーデータ（storage_mode=null）が
         S3に保存されている可能性が高いことに基づいています。
+
+        Args:
+            run: Runエンティティ
+            persist: TrueならDBに永続化する（デフォルト: True）
         """
         from define_db.models import Operation, Process
 
@@ -140,7 +144,10 @@ class HybridAccessLayer:
             result = s3_backend.list_objects_with_dirs(storage_address)
             has_s3_files = bool(result.get('contents', []))
             if has_s3_files:
-                return StorageMode.S3
+                inferred = StorageMode.S3
+                if persist:
+                    self._persist_inferred_mode(run, inferred)
+                return inferred
         except Exception as e:
             logger.debug(f"S3 check failed for Run {run.id}: {e}")
 
@@ -152,10 +159,99 @@ class HybridAccessLayer:
         ).first() is not None
 
         if has_db_logs:
-            return StorageMode.LOCAL
+            inferred = StorageMode.LOCAL
+            if persist:
+                self._persist_inferred_mode(run, inferred)
+            return inferred
 
         # Step 3: どちらにもデータがない場合
         return StorageMode.UNKNOWN
+
+    def _persist_inferred_mode(self, run, mode: StorageMode):
+        """推論結果をDBに永続化する"""
+        try:
+            run.storage_mode = mode.value
+            self._db.commit()
+            logger.info(f"Persisted inferred storage_mode for Run {run.id}: {mode.value}")
+        except Exception as e:
+            logger.warning(f"Failed to persist storage_mode for Run {run.id}: {e}")
+            self._db.rollback()
+
+    def batch_infer_storage_modes(self, runs: list) -> Dict[int, StorageMode]:
+        """
+        複数RunのストレージモードをバッチInfer
+
+        パフォーマンス最適化:
+        1. S3存在確認は個別に実行（list_objects APIの制限）
+        2. DBクエリをIN句で一括取得
+
+        Args:
+            runs: Runエンティティのリスト
+
+        Returns:
+            run_id -> StorageMode のマッピング
+        """
+        from define_db.models import Operation, Process
+
+        result: Dict[int, StorageMode] = {}
+        runs_to_infer = []
+
+        # Step 1: キャッシュチェック & 明示設定済みの除外
+        for run in runs:
+            if run.storage_mode:
+                result[run.id] = StorageMode.from_string(run.storage_mode)
+            elif run.id in self._inferred_mode_cache:
+                result[run.id] = self._inferred_mode_cache[run.id]
+            else:
+                runs_to_infer.append(run)
+
+        if not runs_to_infer:
+            return result
+
+        # Step 2: S3一括確認（各prefixを確認）
+        s3_exists: Dict[int, bool] = {}
+        try:
+            s3_backend = self._get_s3_backend()
+            for run in runs_to_infer:
+                prefix = run.storage_address or f"runs/{run.id}/"
+                try:
+                    res = s3_backend.list_objects_with_dirs(prefix)
+                    s3_exists[run.id] = bool(res.get('contents', []))
+                except Exception:
+                    s3_exists[run.id] = False
+        except Exception as e:
+            logger.warning(f"S3 batch check failed: {e}")
+            for run in runs_to_infer:
+                s3_exists[run.id] = False
+
+        # Step 3: DB一括確認（IN句で効率化）
+        run_ids = [r.id for r in runs_to_infer]
+        db_log_exists = set(
+            row[0] for row in self._db.query(Process.run_id).join(Operation).filter(
+                Process.run_id.in_(run_ids),
+                Operation.log.isnot(None),
+                Operation.log != ''
+            ).distinct()
+        )
+
+        # Step 4: モード判定 & キャッシュ更新
+        for run in runs_to_infer:
+            if s3_exists.get(run.id):
+                mode = StorageMode.S3
+            elif run.id in db_log_exists:
+                mode = StorageMode.LOCAL
+            else:
+                mode = StorageMode.UNKNOWN
+
+            result[run.id] = mode
+            self._inferred_mode_cache[run.id] = mode
+
+            # UNKNOWNでなければDBに永続化
+            if mode != StorageMode.UNKNOWN:
+                self._persist_inferred_mode(run, mode)
+
+        logger.info(f"Batch inferred storage_modes for {len(runs_to_infer)} runs")
+        return result
 
     def _get_file_backend(self, mode: StorageMode):
         """モードに対応するファイルバックエンドを取得（レジストリパターン）"""
@@ -574,6 +670,13 @@ class HybridAccessLayer:
 
         is_hybrid = has_s3_data and has_local_data
 
+        # アクセス可能性を判定
+        is_accessible = has_s3_data or has_local_data
+
+        # ハイブリッドモードの場合はStorageMode.HYBRIDを使用
+        if is_hybrid:
+            mode = StorageMode.HYBRID
+
         if mode == StorageMode.UNKNOWN:
             # 推論してもUNKNOWNの場合: 警告付きで返却
             return StorageInfo(
@@ -587,20 +690,29 @@ class HybridAccessLayer:
                 },
                 warning="Storage mode is not set and could not be inferred. Data may not be displayed correctly.",
                 is_hybrid=is_hybrid,
+                is_accessible=is_accessible,
                 s3_path=s3_path,
                 local_path=local_path
             )
+        elif mode == StorageMode.HYBRID:
+            # ハイブリッドモード: S3とDBの両方にデータあり
+            full_path = f"hybrid://{run.storage_address or f'runs/{run_id}/'}"
+            data_sources = {
+                "logs": "hybrid",
+                "yaml": "s3",
+                "data": "hybrid"
+            }
         elif mode == StorageMode.S3:
             full_path = s3_path or f"s3://labcode-dev-artifacts/{run.storage_address}"
             data_sources = {
-                "logs": "s3" if not has_local_data else "hybrid",
+                "logs": "s3",
                 "yaml": "s3",
                 "data": "s3"
             }
         else:
             full_path = local_path or f"db://sqlite/runs/{run_id}/"
             data_sources = {
-                "logs": "database" if not has_s3_data else "hybrid",
+                "logs": "database",
                 "yaml": "database_or_none",
                 "data": "database_or_none"
             }
@@ -612,6 +724,7 @@ class HybridAccessLayer:
             data_sources=data_sources,
             inferred=is_inferred,
             is_hybrid=is_hybrid,
+            is_accessible=is_accessible,
             s3_path=s3_path,
             local_path=local_path
         )

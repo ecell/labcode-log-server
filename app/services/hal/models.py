@@ -13,6 +13,7 @@ class StorageMode(Enum):
     """ストレージモード"""
     S3 = "s3"
     LOCAL = "local"
+    HYBRID = "hybrid"    # S3とDBの両方にデータがある場合
     UNKNOWN = "unknown"  # storage_mode=nullの場合
 
     @classmethod
@@ -81,6 +82,7 @@ class StorageInfo:
     warning: Optional[str] = None  # 警告メッセージ（UNKNOWNモード時など）
     inferred: bool = False      # モードが推論されたかどうか
     is_hybrid: bool = False     # ハイブリッドモードかどうか（S3+DB両方にデータあり）
+    is_accessible: bool = True  # ストレージにアクセス可能かどうか
     s3_path: Optional[str] = None    # S3パス（ハイブリッド時）
     local_path: Optional[str] = None  # ローカルパス（ハイブリッド時）
 
@@ -90,7 +92,8 @@ class StorageInfo:
             "mode": self.mode.value,
             "storage_address": self.storage_address,
             "full_path": self.full_path,
-            "data_sources": self.data_sources
+            "data_sources": self.data_sources,
+            "isAccessible": self.is_accessible
         }
         if self.warning:
             result["warning"] = self.warning

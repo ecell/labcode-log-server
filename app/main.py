@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from api.route import users, projects, runs, processes, operations, edges, ports, storage, storage_v2
+from api.route import users, projects, runs, processes, operations, edges, ports, storage, storage_v2, process_operations
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -24,5 +24,6 @@ app.include_router(operations.router, prefix="/api")
 app.include_router(edges.router, prefix="/api")
 app.include_router(ports.router, prefix="/api")
 app.include_router(storage.router, prefix="/api")
+app.include_router(process_operations.router, prefix="/api")
 # HAL (Hybrid Access Layer) を使用した新API
 app.include_router(storage_v2.router)
