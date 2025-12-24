@@ -1,8 +1,39 @@
 from fastapi import FastAPI
 from api.route import users, projects, runs, processes, operations, edges, ports, storage, storage_v2, process_operations
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+import logging
 
-app = FastAPI()
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    FastAPIライフサイクル管理
+
+    起動時: データベース初期化チェック
+    終了時: リソースクリーンアップ
+    """
+    # === 起動時処理 ===
+    logger.info("=== FastAPI Starting ===")
+
+    # DB初期化
+    from init_db import ensure_database_ready
+    result = ensure_database_ready()
+
+    if not result['success'] and result['action'] != 'none':
+        logger.error("データベース初期化に失敗しました")
+
+    logger.info("=== FastAPI Ready ===")
+
+    yield  # アプリケーション実行
+
+    # === 終了時処理 ===
+    logger.info("=== FastAPI Shutting Down ===")
+
+
+app = FastAPI(lifespan=lifespan)
 # CORSミドルウェアの設定
 app.add_middleware(
     CORSMiddleware,
