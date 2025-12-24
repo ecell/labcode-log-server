@@ -29,3 +29,23 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 class Base(DeclarativeBase):
     pass
+
+
+def get_db():
+    """
+    FastAPI Dependency Injection用のデータベースセッションジェネレータ
+
+    使用例:
+        @router.post("/endpoint")
+        async def endpoint(db: Session = Depends(get_db)):
+            # dbを使用してクエリを実行
+            pass
+
+    Yields:
+        Session: SQLAlchemyセッション
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

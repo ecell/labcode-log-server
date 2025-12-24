@@ -16,3 +16,5 @@ starlette==0.41.3
 typing_extensions==4.12.2
 uvicorn==0.34.0
 PyYAML==6.0.2
+boto3>=1.35.0
+zipstream-new>=1.1.8

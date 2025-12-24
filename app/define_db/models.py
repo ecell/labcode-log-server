@@ -5,8 +5,8 @@ from sqlalchemy.types import DateTime
 from sqlalchemy import ForeignKey
 from sqlalchemy.types import String
 from sqlalchemy.types import Text
-from sqlalchemy import CheckConstraint, UniqueConstraint
-from typing import List
+from sqlalchemy import CheckConstraint, UniqueConstraint, Index
+from typing import List, Optional
 from define_db.database import Base, engine
 from datetime import datetime
 
@@ -81,6 +81,13 @@ class Run(Base):
     )
     status: Mapped[str] = mapped_column(String(10))
     storage_address: Mapped[str] = mapped_column(String(256))
+    # ★追加: ストレージモード
+    storage_mode: Mapped[str] = mapped_column(
+        String(10),
+        nullable=True,
+        default=None,
+        comment="ストレージモード: 's3' または 'local'"
+    )
     deleted_at: Mapped[datetime] = mapped_column(
         DateTime(),
         nullable=True,
@@ -111,6 +118,13 @@ class Process(Base):
     # ★追加: Portへの逆参照
     ports: Mapped[List["Port"]] = relationship(
         "Port",
+        back_populates="process",
+        cascade="all, delete-orphan"
+    )
+
+    # ★追加: ProcessOperationへの逆参照（多対多リレーション用）
+    process_operations: Mapped[List["ProcessOperation"]] = relationship(
+        "ProcessOperation",
         back_populates="process",
         cascade="all, delete-orphan"
     )
@@ -150,6 +164,13 @@ class Operation(Base):
         nullable=False
     )
     log: Mapped[str] = mapped_column(Text, nullable=True)
+
+    # ★追加: ProcessOperationへの逆参照（多対多リレーション用）
+    process_operations: Mapped[List["ProcessOperation"]] = relationship(
+        "ProcessOperation",
+        back_populates="operation",
+        cascade="all, delete-orphan"
+    )
 
 
 class Edge(Base):
@@ -245,6 +266,60 @@ class Port(Base):
     __table_args__ = (
         CheckConstraint("port_type IN ('input', 'output')", name="check_port_type"),
         UniqueConstraint("process_id", "port_type", "port_name", name="unique_process_port"),
+    )
+
+
+class ProcessOperation(Base):
+    """プロセス-オペレーション間リレーションテーブル
+
+    プロセスとオペレーションの多対多の関係を管理する。
+    2025年11月6日MTG決定事項に基づき作成。
+
+    目的:
+    - プロセスに紐づくオペレーションを効率的にフィルタリング
+    - ランでフィルタリング → プロセスでフィルタリングの2段階検索を実現
+    """
+    __tablename__ = "process_operations"
+
+    # 主キー
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        autoincrement=True
+    )
+
+    # 外部キー: Process
+    process_id: Mapped[int] = mapped_column(
+        ForeignKey("processes.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    process: Mapped["Process"] = relationship(
+        "Process",
+        foreign_keys=[process_id],
+        back_populates="process_operations"
+    )
+
+    # 外部キー: Operation
+    operation_id: Mapped[int] = mapped_column(
+        ForeignKey("operations.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    operation: Mapped["Operation"] = relationship(
+        "Operation",
+        foreign_keys=[operation_id],
+        back_populates="process_operations"
+    )
+
+    # 作成日時
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(),
+        default=datetime.utcnow
+    )
+
+    # インデックスとユニーク制約
+    __table_args__ = (
+        Index('ix_process_operations_process_id', 'process_id'),
+        Index('ix_process_operations_operation_id', 'operation_id'),
+        UniqueConstraint('process_id', 'operation_id', name='uq_process_operation'),
     )
 
 

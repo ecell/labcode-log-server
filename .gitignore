@@ -1,3 +1,10 @@
 .venv
 __pycache__
 *.db
+.env
+*.db*
+
+# Backup files (not to be tracked)
+app/scripts_backup_local/
+app/tests_backup_local/
+data_backup_local/
