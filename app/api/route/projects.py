@@ -1,12 +1,49 @@
 from define_db.models import Project, User
 from define_db.database import SessionLocal
-from api.response_model import ProjectResponse
-from fastapi import APIRouter
+from api.response_model import ProjectResponse, ProjectResponseWithOwner
+from fastapi import APIRouter, Query
 from fastapi import Form
 from fastapi import HTTPException
+from sqlalchemy.orm import joinedload
+from typing import List
 import datetime as dt
 
 router = APIRouter()
+
+
+# ============================================================
+# Admin API: プロジェクト一覧取得（オーナー情報含む）
+# ============================================================
+
+@router.get("/projects/list", tags=["projects"], response_model=List[ProjectResponseWithOwner])
+def list_all(
+    limit: int = Query(default=100, ge=1, le=1000, description="Maximum number of projects to return"),
+    offset: int = Query(default=0, ge=0, description="Number of projects to skip")
+):
+    """
+    全プロジェクト一覧を取得（オーナー情報含む）
+
+    管理画面のプロジェクト一覧表示で使用。
+    オーナーのメールアドレスを含む。
+    ページネーション対応。
+    """
+    with SessionLocal() as session:
+        projects = session.query(Project).options(
+            joinedload(Project.user)
+        ).offset(offset).limit(limit).all()
+
+        result = []
+        for p in projects:
+            resp = ProjectResponseWithOwner(
+                id=p.id,
+                name=p.name,
+                user_id=p.user_id,
+                owner_email=p.user.email if p.user else None,
+                created_at=p.created_at,
+                updated_at=p.updated_at
+            )
+            result.append(resp)
+        return result
 
 
 @router.post("/projects/", tags=["projects"], response_model=ProjectResponse)

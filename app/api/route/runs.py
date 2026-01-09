@@ -3,6 +3,7 @@ from define_db.database import SessionLocal
 from api.response_model import RunResponse, OperationResponseWithProcessStorageAddress, ProcessResponseEnhanced, ProcessDetailResponse
 from api.route.processes import load_port_info_from_db
 from services.port_auto_generator import auto_generate_ports_for_run
+from services.hal import infer_storage_mode_for_run
 from fastapi import APIRouter
 from fastapi import Form
 from fastapi import HTTPException
@@ -53,6 +54,10 @@ def read(id: int):
         run = session.query(Run).filter(Run.id == id, Run.deleted_at.is_(None)).first()
         if not run:
             raise HTTPException(status_code=404, detail="Run not found")
+        # storage_mode=nullの場合は推論して値を設定（DBに永続化）
+        # 2回目以降はキャッシュヒットでS3/DBアクセスなし
+        if run.storage_mode is None:
+            run.storage_mode = infer_storage_mode_for_run(session, run)
         return RunResponse.model_validate(run)
 
 
@@ -204,6 +209,13 @@ def patch(id: int, attribute: str = Form(), new_value: str = Form()):
                         detail="display_visible must be 'true' or 'false'"
                     )
                 run.display_visible = (new_value.lower() == "true")
+            case "storage_mode":
+                if new_value not in ("s3", "local"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="storage_mode must be 's3' or 'local'"
+                    )
+                run.storage_mode = new_value
             case _:
                 raise HTTPException(status_code=400, detail="Invalid attribute")
         session.commit()

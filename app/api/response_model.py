@@ -34,6 +34,7 @@ class RunResponse(BaseModel):
     finished_at: Optional[datetime]
     status: str
     storage_address: str
+    storage_mode: Optional[str] = None  # ★追加: 's3' または 'local'
     deleted_at: datetime | None
     display_visible: bool
     # project: Optional[ProjectResponse]  # リレーション
@@ -55,6 +56,7 @@ class RunResponseWithProjectName(BaseModel):
     finished_at: Optional[datetime]
     status: str
     storage_address: str
+    storage_mode: Optional[str] = None  # ★追加: 's3' または 'local'
     deleted_at: datetime | None
     display_visible: bool
     # project: Optional[ProjectResponse]  # リレーション
@@ -233,3 +235,23 @@ class ProcessListResponse(BaseModel):
     """
     total: int
     items: List[ProcessResponseEnhanced]
+
+
+# ============================================================
+# Admin API用の新規レスポンスモデル
+# ============================================================
+
+class ProjectResponseWithOwner(BaseModel):
+    """プロジェクト情報（オーナー情報含む）のレスポンスモデル
+
+    管理画面のプロジェクト一覧で使用。
+    オーナーのメールアドレスを含む。
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    user_id: int
+    owner_email: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
